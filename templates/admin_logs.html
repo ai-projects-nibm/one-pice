@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Audit Logs — SecureBank{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Audit logs</h1>
+  <p>Append-only application audit trail (system-level detection / monitoring).</p>
+</div>
+
+{% if lines %}
+<pre class="audit-log">{{ lines|join('\n') }}</pre>
+{% else %}
+<p class="text-muted">No log entries yet.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}History — SecureBank{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Transaction history</h1>
+  <p>Signatures are re-verified on every page load to demonstrate integrity / non-repudiation.</p>
+</div>
+
+{% if transactions %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle history-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>From</th>
+        <th>To</th>
+        <th>Amount</th>
+        <th>Time (UTC)</th>
+        <th>Hash (short)</th>
+        <th>Signature</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in transactions %}
+      <tr>
+        <td>{{ t.id }}</td>
+        <td>{{ t.sender_name }}</td>
+        <td>{{ t.receiver_name }}</td>
+        <td>${{ '%.2f'|format(t.amount) }}</td>
+        <td><small>{{ t.timestamp }}</small></td>
+        <td><code>{{ t.payload_hash[:16] }}…</code></td>
+        <td>
+          {% if t.signature_valid %}
+          <span class="badge text-bg-success">Valid</span>
+          {% else %}
+          <span class="badge text-bg-danger">Invalid</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">No transactions yet.</p>
+{% endif %}
+{% endblock %}

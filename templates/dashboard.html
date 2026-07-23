@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — SecureBank{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+  <p>Signed-in as <strong>{{ current_user.username }}</strong> · role <code>{{ role }}</code></p>
+</div>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <div class="stat-block">
+      <p class="stat-label">Available balance</p>
+      <p class="stat-value">${{ '%.2f'|format(balance) }}</p>
+      <p class="stat-meta">Account {{ account_display }}</p>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="action-list">
+      <a class="action-link" href="{{ url_for('balance') }}">View full account number (AES decrypt)</a>
+      <a class="action-link" href="{{ url_for('transfer') }}">Transfer money (RSA-signed)</a>
+      <a class="action-link" href="{{ url_for('history') }}">Transaction history + signature check</a>
+      {% if current_user.is_admin %}
+      <a class="action-link" href="{{ url_for('admin_logs') }}">Audit logs (admin)</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="security-note mt-4">
+  <h2 class="h6 text-uppercase tracking">Active controls</h2>
+  <ul class="mb-0">
+    <li>Passwords stored with <strong>bcrypt</strong></li>
+    <li>Account numbers encrypted with <strong>AES-256-GCM</strong></li>
+    <li>Transfers hashed with <strong>SHA-256</strong> and signed with <strong>RSA-PSS</strong></li>
+    <li>Transport protected with <strong>HTTPS / TLS</strong></li>
+    <li>Session timeout: 15 minutes of inactivity</li>
+  </ul>
+</div>
+{% endblock %}

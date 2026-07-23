@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+bank.db
+keys/
+certificates/
+logs/*.log
+backups/*.db
+backups/*.sha256
+.env
+*.egg-info/

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Login — SecureBank{% endblock %}
+{% block main_class %}{% endblock %}
+{% block content %}
+<div class="login-shell">
+  <div class="login-panel">
+    <p class="login-eyebrow">Secure Banking Prototype</p>
+    <h1 class="login-brand">SecureBank</h1>
+    <p class="login-sub">Encrypted sessions · Digitally signed transfers · Audit logging</p>
+
+    <form method="post" class="login-form mt-4" autocomplete="off">
+      <div class="mb-3">
+        <label class="form-label" for="username">Username</label>
+        <input class="form-control form-control-lg" id="username" name="username" required autofocus>
+      </div>
+      <div class="mb-4">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-control form-control-lg" type="password" id="password" name="password" required>
+      </div>
+      <button class="btn btn-primary btn-lg w-100" type="submit">Sign in</button>
+    </form>
+
+    <div class="demo- creds mt-4">
+      <p class="mb-1"><strong>Demo accounts</strong></p>
+      <ul class="mb-0">
+        <li>alice / Alice@123</li>
+        <li>bob / Bob@12345</li>
+        <li>admin / Admin@123</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
