@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
   <h1>Transfer money</h1>
-  <p>Each transfer is hashed (SHA-256) and digitally signed (RSA-PSS) before commit.</p>
+  <p>Transfers require SMS OTP MFA, then SHA-256 hashing and RSA-PSS signing before commit.</p>
 </div>
 
 <form method="post" class="transfer-form">
@@ -20,7 +20,7 @@
     <label class="form-label" for="amount">Amount (USD)</label>
     <input class="form-control" type="number" step="0.01" min="0.01" id="amount" name="amount" required>
   </div>
-  <button class="btn btn-primary" type="submit">Send signed transfer</button>
+  <button class="btn btn-primary" type="submit">Transfer (requires OTP)</button>
   <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
 </form>
 {% endblock %}

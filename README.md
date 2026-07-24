@@ -10,10 +10,11 @@ Runs well on **Rocky Linux** (VMware VM) or any Linux/macOS host with Python 3.9
 
 | Area | What is implemented |
 |------|---------------------|
-| Login / sessions | Flask-Login, bcrypt passwords, 15-min idle timeout, HttpOnly cookies |
+| Login / sessions | Flask-Login, bcrypt passwords, **SMS OTP MFA** (30s), 15-min idle timeout, HttpOnly cookies |
+| MFA simulator | Old feature-phone UI in a new tab showing the OTP SMS |
 | Dashboard | Balance snapshot, masked account number, role display |
 | View balance | AES-256-GCM decrypt of stored account number |
-| Transfer | Balance update + SHA-256 payload hash + RSA-PSS digital signature |
+| Transfer | **OTP MFA** → balance update + SHA-256 payload hash + RSA-PSS digital signature |
 | History | Re-verifies every signature on page load |
 | Admin | Role-based access; audit log viewer |
 | HTTPS | Self-signed TLS certificate (auto-generated on first run) |
@@ -110,11 +111,13 @@ Backups appear under `backups/` as `bank_YYYYMMDD_HHMMSS.db` plus a `.sha256` ch
 
 Suggested demo flow:
 
-1. Login as **alice**
-2. Open **Balance** (shows decrypted account number)
-3. **Transfer** $100 to **bob**
-4. Open **History** — signature column should show **Valid**
-5. Logout, login as **admin**, open **Audit Logs**
+1. Login as **alice** (password only first)
+2. MFA page opens — also open **MFA Device Simulator** tab (auto or via button)
+3. Read SMS: *Your Verification Code is ###### Valid for 30 seconds* → enter OTP → dashboard
+4. Open **Balance** (shows decrypted account number)
+5. **Transfer** $100 to **bob** → OTP again from phone simulator → complete
+6. Open **History** — signature column should show **Valid**
+7. Logout, login as **admin**, open **Audit Logs** (OTP events are logged too)
 
 ---
 
@@ -144,7 +147,8 @@ Keys live under `keys/` (not inside the database). In production these would be 
 | Control | Implementation |
 |---------|----------------|
 | **Authentication + RBAC** | Flask-Login; roles `user` / `admin` |
-| **Audit logging** | `logs/audit.log` (login, transfer, balance, history) |
+| **MFA (SMS OTP simulation)** | 6-digit OTP, 30s TTL, max 3 attempts; phone simulator tab |
+| **Audit logging** | `logs/audit.log` (login, OTP, transfer, balance, history) |
 | **Session timeout** | 15 minutes idle |
 | **Database backup** | `backup.py` with SHA-256 integrity check |
 | **Firewall / IDS** | Documented below for the Rocky VM (not simulated inside Flask) |
@@ -225,7 +229,7 @@ python3 app.py   # recreates DB, keys, cert, demo users
 
 - [x] Algorithm: bcrypt, AES-256, SHA-256, RSA digital signatures  
 - [x] Protocol: HTTPS/TLS for web content transfer  
-- [x] System: auth/RBAC, audit logs, session timeout, backup script  
+- [x] System: auth/RBAC, **SMS OTP MFA**, audit logs, session timeout, backup script  
 - [x] Documented firewall/IDS alignment for Rocky Linux host  
 
 ---

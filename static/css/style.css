@@ -42,7 +42,8 @@ body {
 .stat-block,
 .detail-panel,
 .transfer-form,
-.security-note {
+.security-note,
+.mfa-verify-panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -172,4 +173,157 @@ body {
 
 .tracking {
   letter-spacing: 0.08em;
+}
+
+.otp-input {
+  letter-spacing: 0.35em;
+  font-weight: 600;
+  max-width: 220px;
+}
+
+/* ---- MFA feature-phone simulator ---- */
+.phone-page {
+  min-height: 100vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at 50% 20%, #3a3a3a, #121212 55%),
+    #0a0a0a;
+  color: #eee;
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+.phone-page-title {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.75rem;
+  color: #9aa3ad;
+}
+
+.feature-phone {
+  width: 260px;
+  background: linear-gradient(160deg, #2c2c2c, #151515 55%, #0e0e0e);
+  border-radius: 28px 28px 36px 36px;
+  border: 3px solid #4a4a4a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 18px 40px rgba(0, 0, 0, 0.55);
+  padding: 14px 16px 22px;
+}
+
+.phone-earpiece {
+  width: 56px;
+  height: 6px;
+  margin: 4px auto 12px;
+  border-radius: 4px;
+  background: #050505;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15);
+}
+
+.phone-screen {
+  background: #0b2a12;
+  border: 3px solid #1a1a1a;
+  border-radius: 8px;
+  min-height: 168px;
+  padding: 0.55rem 0.65rem 0.75rem;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.45);
+  color: #9dff9d;
+  font-family: "Courier New", Courier, monospace;
+}
+
+.phone-status {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  opacity: 0.85;
+  border-bottom: 1px solid rgba(157, 255, 157, 0.25);
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.55rem;
+}
+
+.phone-sms .sms-from {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.phone-sms .sms-body {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.sms-otp {
+  display: inline-block;
+  margin: 0.15rem 0.15rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid rgba(157, 255, 157, 0.55);
+  border-radius: 3px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.sms-ttl {
+  margin: 0.55rem 0 0;
+  font-size: 0.68rem;
+  opacity: 0.75;
+}
+
+.phone-nav {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  gap: 0.45rem;
+  margin: 12px 0 10px;
+}
+
+.nav-key,
+.pad-key {
+  border: none;
+  cursor: default;
+  color: #ddd;
+  background: linear-gradient(180deg, #3a3a3a, #222);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 2px 0 #050505;
+}
+
+.nav-key {
+  height: 34px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.nav-key.ok {
+  border-radius: 18px;
+  font-weight: 700;
+  background: linear-gradient(180deg, #4a4a4a, #262626);
+}
+
+.phone-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem;
+}
+
+.pad-key {
+  height: 38px;
+  border-radius: 50%;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.phone-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #9aa3ad;
+  text-align: center;
+  max-width: 280px;
 }

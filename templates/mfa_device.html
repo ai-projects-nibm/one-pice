@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MFA Device Simulator</title>
+  <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body class="phone-page">
+  <p class="phone-page-title">MFA Device Simulator · SMS OTP</p>
+
+  <div class="feature-phone" aria-label="Simulated feature phone">
+    <div class="phone-earpiece"></div>
+    <div class="phone-screen">
+      <div class="phone-status">
+        <span>SMS</span>
+        <span id="phone-clock"></span>
+      </div>
+      <div class="phone-sms">
+        {% if not has_otp %}
+          <p class="sms-body">No active verification code.<br>Complete login or transfer first.</p>
+        {% elif expired %}
+          <p class="sms-body">Your Verification Code has <strong>expired</strong>.<br>Request a new OTP.</p>
+        {% else %}
+          <p class="sms-from">SecureBank</p>
+          <p class="sms-body">
+            Your Verification Code is
+            <span class="sms-otp" id="sms-otp">{{ code }}</span>
+            Valid for 30 seconds
+          </p>
+          <p class="sms-ttl" id="sms-ttl">Expires in {{ seconds_left }}s</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="phone-nav">
+      <button type="button" class="nav-key soft" tabindex="-1">◀</button>
+      <button type="button" class="nav-key ok" tabindex="-1">OK</button>
+      <button type="button" class="nav-key soft" tabindex="-1">▶</button>
+    </div>
+
+    <div class="phone-keypad">
+      {% for key in ['1','2','3','4','5','6','7','8','9','*','0','#'] %}
+      <button type="button" class="pad-key" tabindex="-1">{{ key }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p class="phone-hint">Read the code, then enter it on the bank tab.</p>
+
+  <script>
+    (function () {
+      function pad(n) { return n < 10 ? "0" + n : String(n); }
+      function updateClock() {
+        var d = new Date();
+        var el = document.getElementById("phone-clock");
+        if (el) el.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes());
+      }
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      var left = {{ seconds_left|int }};
+      var ttl = document.getElementById("sms-ttl");
+      if (!ttl || left <= 0) return;
+      var tick = setInterval(function () {
+        left -= 1;
+        if (left <= 0) {
+          clearInterval(tick);
+          location.reload();
+          return;
+        }
+        ttl.textContent = "Expires in " + left + "s";
+      }, 1000);
+    })();
+  </script>
+</body>
+</html>

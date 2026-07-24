@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}MFA Verification — SecureBank{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Multi-factor authentication</h1>
+  <p>
+    {% if purpose == 'login' %}
+      Simulated SMS OTP required to complete login.
+    {% else %}
+      Simulated SMS OTP required to authorize this transfer
+      {% if receiver_name %} to <strong>{{ receiver_name }}</strong>{% endif %}
+      {% if amount %} for <strong>${{ '%.2f'|format(amount) }}</strong>{% endif %}.
+    {% endif %}
+  </p>
+</div>
+
+<div class="mfa-verify-panel">
+  <div class="alert alert-info mb-3">
+    An SMS was sent to your registered mobile. Open the
+    <strong>MFA Device Simulator</strong> tab to read the code
+    (valid for <strong>30 seconds</strong>).
+  </div>
+
+  <p class="mb-3">
+    <a class="btn btn-outline-primary" href="{{ url_for('mfa_device') }}" target="_blank" rel="noopener" id="open-simulator">
+      Open MFA Device Simulator
+    </a>
+    <span class="text-muted ms-2 small" id="otp-timer">Code expires in {{ seconds_left }}s</span>
+  </p>
+
+  <form method="post" class="otp-form" autocomplete="one-time-code">
+    <div class="mb-3">
+      <label class="form-label" for="otp">Enter OTP</label>
+      <input
+        class="form-control form-control-lg otp-input"
+        id="otp"
+        name="otp"
+        inputmode="numeric"
+        pattern="[0-9]{6}"
+        maxlength="6"
+        placeholder="6-digit code"
+        required
+        autofocus
+      >
+    </div>
+    <button class="btn btn-primary" type="submit">
+      {% if purpose == 'login' %}Verify &amp; sign in{% else %}Verify &amp; complete transfer{% endif %}
+    </button>
+  </form>
+
+  <form method="post" action="{{ url_for('mfa_resend') }}" class="mt-3">
+    <button class="btn btn-link px-0" type="submit">Resend SMS OTP</button>
+  </form>
+</div>
+
+{% if open_simulator %}
+<script>
+  (function () {
+    // Auto-open the phone simulator in a new tab (popup may be blocked once — use the button).
+    var url = {{ url_for('mfa_device')|tojson }};
+    window.open(url, "mfa_device_sim", "noopener,noreferrer");
+
+    var left = {{ seconds_left|int }};
+    var timer = document.getElementById("otp-timer");
+    var tick = setInterval(function () {
+      left -= 1;
+      if (left <= 0) {
+        timer.textContent = "Code expired — click Resend SMS OTP";
+        timer.classList.add("text-danger");
+        clearInterval(tick);
+        return;
+      }
+      timer.textContent = "Code expires in " + left + "s";
+    }, 1000);
+  })();
+</script>
+{% endif %}
+{% endblock %}

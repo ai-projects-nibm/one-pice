@@ -40,6 +40,8 @@ DB_PATH = BASE_DIR / "bank.db"
 LOG_PATH = BASE_DIR / "logs" / "audit.log"
 CERT_DIR = BASE_DIR / "certificates"
 SESSION_TIMEOUT_MINUTES = 15
+OTP_VALID_SECONDS = 30
+OTP_MAX_ATTEMPTS = 3
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get(
@@ -228,6 +230,144 @@ def build_tx_payload(sender_id: int, receiver_id: int, amount: float, ts: str) -
 
 
 # ---------------------------------------------------------------------------
+# OTP / MFA (simulated SMS)
+# ---------------------------------------------------------------------------
+
+def _clear_otp_state() -> None:
+    session.pop("otp", None)
+    session.pop("pending_login_user_id", None)
+    session.pop("pending_transfer", None)
+
+
+def issue_otp(purpose: str, actor: str) -> str:
+    """Generate a 6-digit OTP valid for OTP_VALID_SECONDS (SMS simulation)."""
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    now = datetime.now(timezone.utc).timestamp()
+    session["otp"] = {
+        "code": code,
+        "purpose": purpose,
+        "created_at": now,
+        "expires_at": now + OTP_VALID_SECONDS,
+        "attempts": 0,
+        "actor": actor,
+    }
+    audit(actor, f"OTP_ISSUED purpose={purpose} ttl={OTP_VALID_SECONDS}s")
+    return code
+
+
+def get_otp_state() -> dict | None:
+    return session.get("otp")
+
+
+def otp_seconds_remaining(otp: dict | None = None) -> int:
+    otp = otp or get_otp_state()
+    if not otp:
+        return 0
+    remaining = int(otp["expires_at"] - datetime.now(timezone.utc).timestamp())
+    return max(0, remaining)
+
+
+def verify_otp_code(submitted: str) -> tuple[bool, str]:
+    """Return (ok, error_message). On success leaves purpose data for the caller to consume."""
+    otp = get_otp_state()
+    if not otp:
+        return False, "No active verification code. Please start again."
+
+    if otp_seconds_remaining(otp) <= 0:
+        purpose = otp.get("purpose")
+        audit(otp.get("actor", "unknown"), f"OTP_EXPIRED purpose={purpose}")
+        session.pop("otp", None)
+        return False, "Verification code expired (valid for 30 seconds). Please request a new one."
+
+    otp["attempts"] = int(otp.get("attempts", 0)) + 1
+    session["otp"] = otp
+
+    if otp["attempts"] > OTP_MAX_ATTEMPTS:
+        audit(otp.get("actor", "unknown"), f"OTP_LOCKED purpose={otp.get('purpose')}")
+        _clear_otp_state()
+        return False, "Too many invalid OTP attempts. Please start again."
+
+    if (submitted or "").strip() != otp["code"]:
+        audit(otp.get("actor", "unknown"), f"OTP_FAILED purpose={otp.get('purpose')}")
+        left = OTP_MAX_ATTEMPTS - otp["attempts"]
+        return False, f"Invalid verification code. {left} attempt(s) remaining."
+
+    audit(otp.get("actor", "unknown"), f"OTP_SUCCESS purpose={otp.get('purpose')}")
+    return True, ""
+
+
+def execute_pending_transfer() -> tuple[bool, str]:
+    """Commit the transfer stored in session after successful OTP."""
+    pending = session.get("pending_transfer")
+    if not pending:
+        return False, "No pending transfer found."
+
+    receiver_id = int(pending["receiver_id"])
+    amount = float(pending["amount"])
+    db = get_db()
+
+    receiver = db.execute(
+        "SELECT * FROM users WHERE id = ?", (receiver_id,)
+    ).fetchone()
+    if not receiver:
+        return False, "Receiver not found."
+
+    sender_account = get_account(current_user.id)
+    if sender_account["balance"] < amount:
+        audit(
+            current_user.username,
+            f"TRANSFER_FAILED insufficient_funds amount={amount:.2f} to={receiver['username']}",
+        )
+        return False, "Insufficient balance."
+
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = build_tx_payload(current_user.id, receiver_id, amount, ts)
+    payload_hash = sha256_hex(payload)
+    signature = sign_data(payload)
+
+    if not verify_signature(payload, signature):
+        audit(current_user.username, "TRANSFER_FAILED signature_invalid")
+        return False, "Transaction signature verification failed."
+
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            "UPDATE accounts SET balance = balance - ? WHERE user_id = ?",
+            (amount, current_user.id),
+        )
+        db.execute(
+            "UPDATE accounts SET balance = balance + ? WHERE user_id = ?",
+            (amount, receiver_id),
+        )
+        db.execute(
+            """
+            INSERT INTO transactions
+            (sender_id, receiver_id, amount, payload_hash, signature, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                current_user.id,
+                receiver_id,
+                amount,
+                payload_hash,
+                signature,
+                ts,
+            ),
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        audit(current_user.username, f"TRANSFER_FAILED error={exc}")
+        return False, "Transfer failed. Please try again."
+
+    audit(
+        current_user.username,
+        f"TRANSFER_SUCCESS amount={amount:.2f} to={receiver['username']} hash={payload_hash[:16]}...",
+    )
+    return True, f"Transferred ${amount:.2f} to {receiver['username']}. Transaction digitally signed."
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -252,13 +392,16 @@ def login():
         ).fetchone()
 
         if row and verify_password(password, row["password_hash"]):
-            user = User(row)
-            login_user(user)
-            session["last_activity"] = datetime.now(timezone.utc).timestamp()
-            session.permanent = True
-            audit(username, "LOGIN_SUCCESS")
-            flash(f"Welcome, {username}.", "success")
-            return redirect(url_for("dashboard"))
+            # Password OK → require SMS OTP (MFA) before creating session
+            session["pending_login_user_id"] = row["id"]
+            session.pop("pending_transfer", None)
+            issue_otp(purpose="login", actor=username)
+            audit(username, "LOGIN_PASSWORD_OK awaiting_otp")
+            flash(
+                "Password accepted. Enter the SMS OTP from your MFA Device Simulator.",
+                "info",
+            )
+            return redirect(url_for("mfa_verify"))
 
         audit(username or "unknown", "LOGIN_FAILED")
         flash("Invalid username or password.", "danger")
@@ -274,6 +417,140 @@ def logout():
     session.clear()
     flash("Logged out successfully.", "info")
     return redirect(url_for("login"))
+
+
+@app.route("/mfa/verify", methods=["GET", "POST"])
+def mfa_verify():
+    otp = get_otp_state()
+    if not otp:
+        flash("No active MFA challenge. Please start again.", "warning")
+        if current_user.is_authenticated:
+            return redirect(url_for("transfer"))
+        return redirect(url_for("login"))
+
+    purpose = otp.get("purpose")
+    if purpose == "login" and not session.get("pending_login_user_id"):
+        _clear_otp_state()
+        flash("Login MFA session expired. Please sign in again.", "warning")
+        return redirect(url_for("login"))
+    if purpose == "transfer":
+        if not current_user.is_authenticated or not session.get("pending_transfer"):
+            _clear_otp_state()
+            flash("Transfer MFA session expired. Please try again.", "warning")
+            return redirect(url_for("transfer") if current_user.is_authenticated else url_for("login"))
+
+    if request.method == "POST":
+        ok, err = verify_otp_code(request.form.get("otp") or "")
+        if not ok:
+            flash(err, "danger")
+            if not get_otp_state():
+                # Locked or cleared
+                if purpose == "login":
+                    session.pop("pending_login_user_id", None)
+                    return redirect(url_for("login"))
+                session.pop("pending_transfer", None)
+                return redirect(url_for("transfer"))
+            return redirect(url_for("mfa_verify"))
+
+        # OTP accepted — complete the pending action
+        if purpose == "login":
+            user_id = session.pop("pending_login_user_id", None)
+            session.pop("otp", None)
+            db = get_db()
+            row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if not row:
+                flash("User not found.", "danger")
+                return redirect(url_for("login"))
+            user = User(row)
+            login_user(user)
+            session["last_activity"] = datetime.now(timezone.utc).timestamp()
+            session.permanent = True
+            audit(user.username, "LOGIN_SUCCESS mfa_ok")
+            flash(f"Welcome, {user.username}. MFA verified.", "success")
+            return redirect(url_for("dashboard"))
+
+        # purpose == transfer
+        session.pop("otp", None)
+        success, message = execute_pending_transfer()
+        session.pop("pending_transfer", None)
+        if success:
+            flash(message, "success")
+            return redirect(url_for("history"))
+        flash(message, "danger")
+        return redirect(url_for("transfer"))
+
+    pending_transfer = session.get("pending_transfer")
+    receiver_name = None
+    amount = None
+    if pending_transfer:
+        row = (
+            get_db()
+            .execute(
+                "SELECT username FROM users WHERE id = ?",
+                (pending_transfer["receiver_id"],),
+            )
+            .fetchone()
+        )
+        receiver_name = row["username"] if row else "unknown"
+        amount = pending_transfer["amount"]
+
+    return render_template(
+        "mfa_verify.html",
+        purpose=purpose,
+        seconds_left=otp_seconds_remaining(otp),
+        open_simulator=True,
+        receiver_name=receiver_name,
+        amount=amount,
+    )
+
+
+@app.route("/mfa/device")
+def mfa_device():
+    """Simulated mobile phone showing the SMS OTP (opens in a new tab)."""
+    otp = get_otp_state()
+    code = otp["code"] if otp else None
+    seconds_left = otp_seconds_remaining(otp) if otp else 0
+    expired = bool(otp) and seconds_left <= 0
+    purpose = otp.get("purpose") if otp else None
+    return render_template(
+        "mfa_device.html",
+        code=code,
+        seconds_left=seconds_left,
+        expired=expired,
+        purpose=purpose,
+        has_otp=bool(otp),
+    )
+
+
+@app.route("/mfa/resend", methods=["POST"])
+def mfa_resend():
+    otp = get_otp_state()
+    if not otp:
+        flash("No active MFA challenge to refresh.", "warning")
+        return redirect(url_for("login"))
+
+    purpose = otp.get("purpose")
+    if purpose == "login":
+        user_id = session.get("pending_login_user_id")
+        if not user_id:
+            _clear_otp_state()
+            return redirect(url_for("login"))
+        row = get_db().execute(
+            "SELECT username FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        actor = row["username"] if row else "unknown"
+        issue_otp(purpose="login", actor=actor)
+    elif purpose == "transfer":
+        if not current_user.is_authenticated or not session.get("pending_transfer"):
+            _clear_otp_state()
+            return redirect(url_for("login"))
+        issue_otp(purpose="transfer", actor=current_user.username)
+    else:
+        flash("Unknown MFA purpose.", "danger")
+        return redirect(url_for("login"))
+
+    flash("A new SMS OTP was sent. Check the MFA Device Simulator tab.", "info")
+    return redirect(url_for("mfa_verify"))
 
 
 @app.route("/dashboard")
@@ -331,8 +608,6 @@ def transfer():
             return redirect(url_for("transfer"))
 
         sender_account = get_account(current_user.id)
-        receiver_account = get_account(receiver_id)
-
         if sender_account["balance"] < amount:
             audit(
                 current_user.username,
@@ -341,59 +616,22 @@ def transfer():
             flash("Insufficient balance.", "danger")
             return redirect(url_for("transfer"))
 
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        payload = build_tx_payload(current_user.id, receiver_id, amount, ts)
-        payload_hash = sha256_hex(payload)
-        signature = sign_data(payload)
-
-        # Integrity check before commit
-        if not verify_signature(payload, signature):
-            audit(current_user.username, "TRANSFER_FAILED signature_invalid")
-            flash("Transaction signature verification failed.", "danger")
-            return redirect(url_for("transfer"))
-
-        try:
-            db.execute("BEGIN IMMEDIATE")
-            db.execute(
-                "UPDATE accounts SET balance = balance - ? WHERE user_id = ?",
-                (amount, current_user.id),
-            )
-            db.execute(
-                "UPDATE accounts SET balance = balance + ? WHERE user_id = ?",
-                (amount, receiver_id),
-            )
-            db.execute(
-                """
-                INSERT INTO transactions
-                (sender_id, receiver_id, amount, payload_hash, signature, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    current_user.id,
-                    receiver_id,
-                    amount,
-                    payload_hash,
-                    signature,
-                    ts,
-                ),
-            )
-            db.commit()
-        except Exception as exc:
-            db.rollback()
-            audit(current_user.username, f"TRANSFER_FAILED error={exc}")
-            flash("Transfer failed. Please try again.", "danger")
-            return redirect(url_for("transfer"))
-
+        # Hold transfer details and require SMS OTP before commit
+        session["pending_transfer"] = {
+            "receiver_id": receiver_id,
+            "amount": amount,
+        }
+        session.pop("pending_login_user_id", None)
+        issue_otp(purpose="transfer", actor=current_user.username)
         audit(
             current_user.username,
-            f"TRANSFER_SUCCESS amount={amount:.2f} to={receiver['username']} hash={payload_hash[:16]}...",
+            f"TRANSFER_PENDING amount={amount:.2f} to={receiver['username']} awaiting_otp",
         )
         flash(
-            f"Transferred ${amount:.2f} to {receiver['username']}. "
-            "Transaction digitally signed.",
-            "success",
+            "Transfer ready. Enter the SMS OTP from your MFA Device Simulator to complete it.",
+            "info",
         )
-        return redirect(url_for("history"))
+        return redirect(url_for("mfa_verify"))
 
     return render_template("transfer.html", users=users)
 
